@@ -1,0 +1,106 @@
+# ==========================================================
+#  CRM + Savdo tizimi — .gitignore
+# ==========================================================
+
+# ----- Maxfiy fayllar (ENG MUHIM) -----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+secrets.json
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
+
+# ----- Virtualenv -----
+venv/
+.venv/
+env/
+ENV/
+
+# ----- Django -----
+*.log
+db.sqlite3
+db.sqlite3-journal
+/backend/media/
+/backend/staticfiles/
+/backend/static_root/
+local_settings.py
+
+# ----- Celery -----
+celerybeat-schedule
+celerybeat.pid
+*.pid
+
+# ----- Test / coverage -----
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+nosetests.xml
+coverage.xml
+
+# ----- Node / Frontend -----
+node_modules/
+.next/
+out/
+build/
+dist/
+.npm/
+.pnp.*
+.yarn/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.eslintcache
+.vite/
+.turbo/
+
+# ----- Mobile (React Native / Flutter) -----
+.expo/
+.expo-shared/
+*.jks
+*.keystore
+!debug.keystore
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/ios/Pods/
+**/android/.gradle/
+**/android/app/build/
+*.ipa
+*.apk
+*.aab
+
+# ----- IDE / Editor -----
+.vscode/
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*~
+
+# ----- OS -----
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+desktop.ini
+
+# ----- Docker -----
+docker-compose.override.yml
