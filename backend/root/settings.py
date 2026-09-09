@@ -36,7 +36,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
 
     # Local apps
-    'auth.apps.AuthConfig',
+    'users.apps.UsersConfig',
     'product',
     'order',
     'analytics',
@@ -124,3 +124,18 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Custom user model — login phone_number orqali (TZ 3.2)
+AUTH_USER_MODEL = 'users.User'
+
+
+# Tasdiqlash kodi (TZ 3.3 / 4-bo'lim)
+VERIFICATION_CODE_LENGTH = env.int('VERIFICATION_CODE_LENGTH', default=6)
+VERIFICATION_CODE_TTL_MINUTES = env.int('VERIFICATION_CODE_TTL_MINUTES', default=5)
+VERIFICATION_CODE_MAX_ATTEMPTS = env.int('VERIFICATION_CODE_MAX_ATTEMPTS', default=5)
+VERIFICATION_CODE_RESEND_SECONDS = env.int('VERIFICATION_CODE_RESEND_SECONDS', default=60)
+
+
+# Media (avatar yuklash uchun)
+MEDIA_URL = env('MEDIA_URL', default='/media/')
+MEDIA_ROOT = BASE_DIR / 'media'
