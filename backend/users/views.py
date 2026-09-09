@@ -1,12 +1,20 @@
 """users app view'lari."""
 
+from django.db import transaction
 from drf_spectacular.utils import OpenApiExample, extend_schema
 from rest_framework import generics, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from .serializers import RegisterResponseSerializer, RegisterSerializer, UserSerializer
+from .serializers import (
+    ConfirmResponseSerializer,
+    ConfirmSerializer,
+    RegisterResponseSerializer,
+    RegisterSerializer,
+    UserSerializer,
+)
 
 
 @extend_schema(
@@ -71,6 +79,56 @@ class RegisterView(generics.CreateAPIView):
                 'user': UserSerializer(user, context=self.get_serializer_context()).data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema(
+    tags=['auth'],
+    summary="Akkauntni tasdiqlash",
+    responses={200: ConfirmResponseSerializer},
+    examples=[
+        OpenApiExample(
+            "So'rov",
+            request_only=True,
+            value={'phone_number': '901112233', 'code': '123456'},
+        ),
+        OpenApiExample(
+            "Xatolik — kod noto'g'ri",
+            response_only=True,
+            status_codes=['400'],
+            value={'code': ["Kod noto'g'ri. 2 ta urinish qoldi."]},
+        ),
+    ],
+)
+class ConfirmView(generics.GenericAPIView):
+    """POST /api/v1/auth/confirm/ — ochiq."""
+
+    serializer_class = ConfirmSerializer
+    permission_classes = [AllowAny]
+    authentication_classes = []
+
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        user = serializer.validated_data['user']
+        code = serializer.validated_data['verification_code']
+
+        with transaction.atomic():
+            code.is_used = True
+            code.save(update_fields=['is_used'])
+            user.is_active = True
+            user.save(update_fields=['is_active'])
+
+        refresh = RefreshToken.for_user(user)
+        return Response(
+            {
+                'message': "Akkaunt tasdiqlandi.",
+                'access': str(refresh.access_token),
+                'refresh': str(refresh),
+                'user': UserSerializer(user, context=self.get_serializer_context()).data,
+            },
+            status=status.HTTP_200_OK,
         )
 
 

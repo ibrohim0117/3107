@@ -142,6 +142,20 @@ class User(AbstractBaseUser, PermissionsMixin):
     def is_admin(self):
         return self.role == UserRole.ADMIN
 
+    def create_code(self, purpose=None):
+        """Foydalanuvchi uchun yangi tasdiqlash kodi yaratadi (TZ S1-03).
+
+        Avvalgi ishlatilmagan kodlar bekor qilinadi — bir vaqtda faqat
+        bitta yaroqli kod bo'ladi.
+        """
+        purpose = purpose or CodePurpose.REGISTER
+        self.codes.filter(purpose=purpose, is_used=False).update(is_used=True)
+        return VerificationCode.objects.create(
+            user=self,
+            code=VerificationCode.generate_code(),
+            purpose=purpose,
+        )
+
 
 class CodePurpose(models.TextChoices):
     REGISTER = 'register', "Ro'yxatdan o'tish"

@@ -2,12 +2,19 @@
 
 from django.urls import path
 
-from .views import MeView, RegisterView, TokenObtainView, TokenRefreshCustomView
+from .views import (
+    ConfirmView,
+    MeView,
+    RegisterView,
+    TokenObtainView,
+    TokenRefreshCustomView,
+)
 
 app_name = 'users'
 
 urlpatterns = [
     path('register/', RegisterView.as_view(), name='register'),
+    path('confirm/', ConfirmView.as_view(), name='confirm'),
     path('me/', MeView.as_view(), name='me'),
 
     # Vaqtinchalik — TZ S1-09 dagi custom /auth/login/ bilan almashtiriladi

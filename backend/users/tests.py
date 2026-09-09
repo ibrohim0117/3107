@@ -1,8 +1,11 @@
 """users app testlari (TZ S1-02 DoD: normalizatsiya testlari)."""
 
+from datetime import timedelta
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse_lazy
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from .models import User, UserRole, VerificationCode
@@ -206,3 +209,106 @@ class SchemaTests(APITestCase):
         # /me/ himoyalangan, /register/ ochiq
         self.assertEqual(paths['/api/v1/auth/me/']['get']['security'], [{'jwtAuth': []}])
         self.assertEqual(paths['/api/v1/auth/register/']['post']['security'], [{}])
+
+
+class ConfirmAPITests(APITestCase):
+    url = reverse_lazy('users:confirm')
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            '901112233', 'Qwerty!2345', full_name='Ali', email='ali@mail.uz'
+        )
+        self.code = self.user.create_code()
+
+    def test_registerda_kod_yaratiladi(self):
+        response = self.client.post(
+            reverse_lazy('users:register'),
+            {
+                'full_name': 'Vali',
+                'phone_number': '905550000',
+                'email': 'vali@mail.uz',
+                'password': 'Qwerty!2345',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+
+        code = User.objects.get(email='vali@mail.uz').codes.get()
+        self.assertEqual(len(code.code), 6)
+        self.assertFalse(code.is_used)
+        # kod javobda qaytmasligi kerak (TZ 4-bo'lim, xavfsizlik)
+        self.assertNotIn(code.code, str(response.data))
+
+    def test_create_code_eski_kodni_bekor_qiladi(self):
+        yangi = self.user.create_code()
+        self.code.refresh_from_db()
+
+        self.assertTrue(self.code.is_used)
+        self.assertEqual(self.user.codes.filter(is_used=False).count(), 1)
+        self.assertNotEqual(yangi.pk, self.code.pk)
+
+    def test_togri_kod_akkauntni_faollashtiradi_va_token_beradi(self):
+        response = self.client.post(
+            self.url,
+            {'phone_number': '+998 90 111 22 33', 'code': self.code.code},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
+
+        self.user.refresh_from_db()
+        self.code.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertTrue(self.code.is_used)
+
+        # olingan token bilan /me/ ochiladi
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {response.data['access']}")
+        self.assertEqual(self.client.get(reverse_lazy('users:me')).status_code, 200)
+
+    def test_xato_kod_urinishni_oshiradi(self):
+        response = self.client.post(
+            self.url, {'phone_number': '901112233', 'code': '000000'}, format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('code', response.data)
+
+        self.code.refresh_from_db()
+        self.user.refresh_from_db()
+        self.assertEqual(self.code.attempts, 1)
+        self.assertFalse(self.user.is_active)
+
+    def test_urinishlar_tugagach_togri_kod_ham_ishlamaydi(self):
+        for _ in range(self.code.max_attempts):
+            self.client.post(self.url, {'phone_number': '901112233', 'code': '000000'}, format='json')
+
+        response = self.client.post(
+            self.url, {'phone_number': '901112233', 'code': self.code.code}, format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+
+    def test_muddati_otgan_kod(self):
+        VerificationCode.objects.filter(pk=self.code.pk).update(
+            expires_at=timezone.now() - timedelta(seconds=1)
+        )
+        response = self.client.post(
+            self.url, {'phone_number': '901112233', 'code': self.code.code}, format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+
+    def test_kod_ikki_marta_ishlatilmaydi(self):
+        self.client.post(self.url, {'phone_number': '901112233', 'code': self.code.code}, format='json')
+        response = self.client.post(
+            self.url, {'phone_number': '901112233', 'code': self.code.code}, format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_notanish_raqam_404(self):
+        response = self.client.post(
+            self.url, {'phone_number': '909999999', 'code': '123456'}, format='json'
+        )
+        self.assertEqual(response.status_code, 404)
