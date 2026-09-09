@@ -2,6 +2,8 @@
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase
+from django.urls import reverse_lazy
+from rest_framework.test import APITestCase
 
 from .models import User, UserRole, VerificationCode
 from .utils import normalize_phone
@@ -94,3 +96,95 @@ class VerificationCodeTests(TestCase):
         code = VerificationCode.objects.create(user=self.user, code='123456')
         code.attempts = code.max_attempts
         self.assertFalse(code.is_valid)
+
+
+class RegisterAPITests(APITestCase):
+    url = reverse_lazy('users:register')
+
+    def payload(self, **over):
+        data = {
+            'full_name': 'Ali Valiyev',
+            'phone_number': '901112233',
+            'email': 'ali@mail.uz',
+            'password': 'Qwerty!2345',
+        }
+        data.update(over)
+        return data
+
+    def test_royxatdan_otish(self):
+        response = self.client.post(self.url, self.payload(), format='json')
+        self.assertEqual(response.status_code, 201)
+
+        user = User.objects.get(email='ali@mail.uz')
+        self.assertEqual(user.phone_number, VALID)      # normalizatsiya qilindi
+        self.assertEqual(user.role, UserRole.USER)      # hamma oddiy user
+        self.assertFalse(user.is_active)                # tasdiqlashdan oldin faol emas
+        self.assertTrue(user.check_password('Qwerty!2345'))
+        self.assertNotIn('password', response.data['user'])
+
+    def test_role_va_is_active_tashqaridan_berilmaydi(self):
+        response = self.client.post(
+            self.url,
+            self.payload(role='admin', is_active=True, is_superuser=True),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+
+        user = User.objects.get(email='ali@mail.uz')
+        self.assertEqual(user.role, UserRole.USER)
+        self.assertFalse(user.is_active)
+        self.assertFalse(user.is_superuser)
+
+    def test_dublikat_raqam_boshqa_formatda(self):
+        self.client.post(self.url, self.payload(), format='json')
+        response = self.client.post(
+            self.url,
+            self.payload(phone_number='+998 90 111 22 33', email='vali@mail.uz'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('phone_number', response.data)
+
+    def test_notogri_raqam_va_zaif_parol(self):
+        response = self.client.post(
+            self.url, self.payload(phone_number='123', password='12345678'), format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('phone_number', response.data)
+        self.assertIn('password', response.data)
+
+
+class MeAPITests(APITestCase):
+    url = reverse_lazy('users:me')
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            '901112233', 'Qwerty!2345', full_name='Ali', email='ali@mail.uz'
+        )
+
+    def test_token_siz_401(self):
+        self.assertEqual(self.client.get(self.url).status_code, 401)
+
+    def test_faol_bolmagan_user_token_ololmaydi(self):
+        response = self.client.post(
+            reverse_lazy('users:token_obtain_pair'),
+            {'phone_number': '901112233', 'password': 'Qwerty!2345'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_token_bilan_oz_profilini_oladi(self):
+        User.objects.filter(pk=self.user.pk).update(is_active=True)
+        token = self.client.post(
+            reverse_lazy('users:token_obtain_pair'),
+            {'phone_number': '901112233', 'password': 'Qwerty!2345'},
+            format='json',
+        ).data['access']
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['id'], self.user.pk)
+        self.assertEqual(response.data['phone_number'], VALID)
+        self.assertNotIn('password', response.data)

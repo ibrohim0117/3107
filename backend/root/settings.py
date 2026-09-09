@@ -5,6 +5,7 @@ Maxfiy qiymatlar `.env` faylidan o'qiladi (django-environ).
 Namuna: `.env.example`
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import environ
@@ -34,6 +35,11 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    # Third party
+    'rest_framework',
+    'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
 
     # Local apps
     'users.apps.UsersConfig',
@@ -139,3 +145,42 @@ VERIFICATION_CODE_RESEND_SECONDS = env.int('VERIFICATION_CODE_RESEND_SECONDS', d
 # Media (avatar yuklash uchun)
 MEDIA_URL = env('MEDIA_URL', default='/media/')
 MEDIA_ROOT = BASE_DIR / 'media'
+
+
+# Django REST Framework (TZ 6-bo'lim)
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework_simplejwt.authentication.JWTAuthentication',
+    ),
+    # Default — yopiq. Ochiq endpointda view'ning o'zida AllowAny yoziladi.
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
+    'DEFAULT_FILTER_BACKENDS': (
+        'django_filters.rest_framework.DjangoFilterBackend',
+    ),
+    'DEFAULT_THROTTLE_RATES': {
+        'anon': env('THROTTLE_ANON', default='100/hour'),
+        'user': env('THROTTLE_USER', default='1000/hour'),
+        'auth': env('THROTTLE_AUTH', default='10/hour'),
+    },
+}
+
+
+# JWT — access 30 daqiqa, refresh 7 kun (TZ 1-bo'lim)
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(
+        minutes=env.int('ACCESS_TOKEN_LIFETIME_MINUTES', default=30)
+    ),
+    'REFRESH_TOKEN_LIFETIME': timedelta(
+        days=env.int('REFRESH_TOKEN_LIFETIME_DAYS', default=7)
+    ),
+    'ROTATE_REFRESH_TOKENS': env.bool('ROTATE_REFRESH_TOKENS', default=True),
+    'BLACKLIST_AFTER_ROTATION': env.bool('BLACKLIST_AFTER_ROTATION', default=True),
+    'SIGNING_KEY': env('JWT_SIGNING_KEY', default='') or SECRET_KEY,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'USER_ID_FIELD': 'id',
+    'USER_ID_CLAIM': 'user_id',
+}
