@@ -188,3 +188,21 @@ class MeAPITests(APITestCase):
         self.assertEqual(response.data['id'], self.user.pk)
         self.assertEqual(response.data['phone_number'], VALID)
         self.assertNotIn('password', response.data)
+
+
+class SchemaTests(APITestCase):
+    """drf-spectacular sozlamalari buzilmasligi uchun (TZ S0-06)."""
+
+    def test_sahifalar_ochiladi(self):
+        for name in ('swagger-ui', 'schema', 'redoc'):
+            with self.subTest(name=name):
+                self.assertEqual(self.client.get(reverse_lazy(name)).status_code, 200)
+
+    def test_schema_da_barcha_endpointlar_bor(self):
+        response = self.client.get(reverse_lazy('schema'), {'format': 'json'})
+        paths = response.data['paths']
+        self.assertIn('/api/v1/auth/register/', paths)
+        self.assertIn('/api/v1/auth/me/', paths)
+        # /me/ himoyalangan, /register/ ochiq
+        self.assertEqual(paths['/api/v1/auth/me/']['get']['security'], [{'jwtAuth': []}])
+        self.assertEqual(paths['/api/v1/auth/register/']['post']['security'], [{}])

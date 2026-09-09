@@ -98,3 +98,10 @@ class UserSerializer(serializers.ModelSerializer):
             'created_at',
         )
         read_only_fields = fields
+
+
+class RegisterResponseSerializer(serializers.Serializer):
+    """Faqat hujjat uchun — `POST /auth/register/` javobining tuzilishi."""
+
+    message = serializers.CharField()
+    user = UserSerializer()

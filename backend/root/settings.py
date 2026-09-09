@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'rest_framework_simplejwt.token_blacklist',
+    'drf_spectacular',
 
     # Local apps
     'users.apps.UsersConfig',
@@ -161,6 +162,7 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': (
         'django_filters.rest_framework.DjangoFilterBackend',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
     'DEFAULT_THROTTLE_RATES': {
         'anon': env('THROTTLE_ANON', default='100/hour'),
         'user': env('THROTTLE_USER', default='1000/hour'),
@@ -183,4 +185,33 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'USER_ID_FIELD': 'id',
     'USER_ID_CLAIM': 'user_id',
+}
+
+
+# drf-spectacular — Swagger / Redoc (TZ S0-06)
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'CRM + Savdo tizimi API',
+    'DESCRIPTION': (
+        "Kichik CRM va onlayn savdo tizimi API hujjati.\n\n"
+        "**Autentifikatsiya:** `POST /api/v1/auth/token/` orqali `access` token oling, "
+        "so'ng o'ng yuqoridagi **Authorize** tugmasini bosib `Bearer <access>` ni kiriting.\n\n"
+        "Eslatma: user ro'yxatdan o'tganda `is_active=False` bo'ladi — token olish uchun "
+        "avval akkaunt tasdiqlanishi kerak."
+    ),
+    'VERSION': '1.0.0',
+    # Schema'ning o'zi endpointlar ro'yxatida ko'rinmasin
+    'SERVE_INCLUDE_SCHEMA': False,
+    # /api/v1/ prefiksi operation nomlaridan olib tashlanadi
+    'SCHEMA_PATH_PREFIX': '/api/v1',
+    # multipart (avatar) va json body'ni alohida ko'rsatadi
+    'COMPONENT_SPLIT_REQUEST': True,
+    'SORT_OPERATIONS': False,
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+        'filter': True,
+    },
+    'TAGS': [
+        {'name': 'auth', 'description': "Ro'yxatdan o'tish, token va profil"},
+    ],
 }
