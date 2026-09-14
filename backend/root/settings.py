@@ -213,5 +213,6 @@ SPECTACULAR_SETTINGS = {
     },
     'TAGS': [
         {'name': 'auth', 'description': "Ro'yxatdan o'tish, token va profil"},
+        {'name': 'catalog', 'description': "Kategoriyalar va mahsulotlar"},
     ],
 }

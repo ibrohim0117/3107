@@ -7,6 +7,8 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, transaction
 from django.db.models import ProtectedError
 from django.test import TestCase
+from django.urls import reverse
+from rest_framework.test import APITestCase
 
 from users.models import User
 
@@ -237,3 +239,59 @@ class CommentTests(TestCase):
         with self.assertRaises(ValidationError) as ctx:
             javob.full_clean()
         self.assertIn('parent', ctx.exception.error_dict)
+
+
+class CategoryListAPITests(APITestCase):
+    url = reverse('product:category-list')
+
+    @classmethod
+    def setUpTestData(cls):
+        # 25 ta faol + 1 ta nofaol kategoriya
+        for i in range(1, 26):
+            Category.objects.create(name=f'Kategoriya {i:02d}')
+        Category.objects.create(name='Yashirin', is_active=False)
+
+    def test_ochiq_endpoint_va_standart_sahifa(self):
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(set(response.data), {'count', 'next', 'previous', 'results'})
+        self.assertEqual(response.data['count'], 25)
+        self.assertEqual(len(response.data['results']), 20)  # standart page_size
+        self.assertIsNone(response.data['previous'])
+        self.assertIn('page=2', response.data['next'])
+
+    def test_ikkinchi_sahifa(self):
+        response = self.client.get(self.url, {'page': 2})
+
+        self.assertEqual(len(response.data['results']), 5)
+        self.assertIsNone(response.data['next'])
+        self.assertIsNotNone(response.data['previous'])
+
+    def test_page_size_parametri(self):
+        response = self.client.get(self.url, {'page_size': 10})
+        self.assertEqual(len(response.data['results']), 10)
+
+    def test_page_size_100_dan_oshmaydi(self):
+        for i in range(26, 131):
+            Category.objects.create(name=f'Kategoriya {i:03d}')
+        response = self.client.get(self.url, {'page_size': 1000})
+        self.assertEqual(len(response.data['results']), 100)
+
+    def test_mavjud_bolmagan_sahifa_404(self):
+        response = self.client.get(self.url, {'page': 99})
+        self.assertEqual(response.status_code, 404)
+
+    def test_nofaol_kategoriya_korinmaydi(self):
+        response = self.client.get(self.url, {'page_size': 100})
+        names = [item['name'] for item in response.data['results']]
+        self.assertNotIn('Yashirin', names)
+
+    def test_element_maydonlari_va_parent(self):
+        ota = Category.objects.get(name='Kategoriya 01')
+        Category.objects.create(name='AAA ichki', parent=ota)
+
+        item = self.client.get(self.url).data['results'][0]  # nom bo'yicha tartib
+        self.assertEqual(set(item), {'id', 'name', 'slug', 'image', 'parent'})
+        self.assertEqual(item['name'], 'AAA ichki')
+        self.assertEqual(item['parent'], ota.pk)
