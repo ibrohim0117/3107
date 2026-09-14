@@ -291,10 +291,25 @@ class CategoryListAPITests(APITestCase):
         ota = Category.objects.get(name='Kategoriya 01')
         Category.objects.create(name='AAA ichki', parent=ota)
 
-        item = self.client.get(self.url).data['results'][0]  # nom bo'yicha tartib
-        self.assertEqual(set(item), {'id', 'name', 'slug', 'image', 'parent'})
+        results = self.client.get(self.url).data['results']  # nom bo'yicha tartib
+        item = results[0]
+        self.assertEqual(set(item), {'id', 'name', 'slug', 'image', 'parent', 'parent_name'})
         self.assertEqual(item['name'], 'AAA ichki')
         self.assertEqual(item['parent'], ota.pk)
+        self.assertEqual(item['parent_name'], 'Kategoriya 01')
+
+        # asosiy kategoriyada ikkalasi ham null
+        self.assertIsNone(results[1]['parent'])
+        self.assertIsNone(results[1]['parent_name'])
+
+    def test_parent_name_uchun_n_plus_1_yoq(self):
+        ota = Category.objects.create(name='Ota')
+        for i in range(15):
+            Category.objects.create(name=f'Bola {i:02d}', parent=ota)
+
+        # count + ro'yxat (parent JOIN bilan) — kategoriyalar soniga bog'liq emas
+        with self.assertNumQueries(2):
+            self.client.get(self.url)
 
 
 class ProductListAPITests(APITestCase):
@@ -342,9 +357,11 @@ class ProductListAPITests(APITestCase):
         )
         self.assertEqual(
             set(item),
-            {'id', 'name', 'slug', 'category', 'price', 'discount',
+            {'id', 'name', 'slug', 'category', 'category_name', 'price', 'discount',
              'discount_price', 'unit', 'in_stock', 'main_image'},
         )
+        self.assertEqual(item['category'], self.sut.pk)
+        self.assertEqual(item['category_name'], 'Sut mahsulotlari')
         self.assertEqual(item['discount_price'], '10800.00')
         self.assertEqual(item['unit'], 'dona')
         self.assertIsNone(item['main_image'])
@@ -403,12 +420,19 @@ class ProductListAPITests(APITestCase):
         self.assertEqual(self.names(response), {'Sut 1L'})
 
     def test_n_plus_1_yoq(self):
+        # har xil kategoriya va birlik — FK keshi yordam bermaydigan eng yomon holat
         for i in range(10):
+            category = Category.objects.create(name=f'Kat {i}')
+            unit = Unit.objects.create(name=f'Birlik {i}', short_name=f'b{i}')
             p = Product.objects.create(
-                name=f'Qo\'shimcha {i}', category=self.oziq, unit=self.unit, price=Decimal('1000')
+                name=f'Qo\'shimcha {i}', category=category, unit=unit, price=Decimal('1000')
             )
             ProductImage.objects.create(product=p, image=f'products/{i}.jpg')
 
         # count + ro'yxat + rasmlar prefetch — mahsulotlar soniga bog'liq emas
         with self.assertNumQueries(3):
-            self.client.get(self.url)
+            response = self.client.get(self.url, {'page_size': 100})
+
+        with_image = [i for i in response.data['results'] if i['main_image']]
+        self.assertEqual(len(with_image), 10)
+        self.assertTrue(all(i['category_name'] for i in response.data['results']))

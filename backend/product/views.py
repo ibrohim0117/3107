@@ -20,7 +20,8 @@ from .serializers import CategorySerializer, ProductListSerializer
         "Faol kategoriyalar ro'yxati, sahifalangan holda.\n\n"
         "- `page` — sahifa raqami (1 dan boshlanadi)\n"
         "- `page_size` — bir sahifadagi elementlar soni (standart 20, maksimal 100)\n\n"
-        "`parent` bo'sh bo'lsa — asosiy kategoriya, aks holda ota kategoriyaning `id` si."
+        "`parent` va `parent_name` bo'sh (`null`) bo'lsa — asosiy kategoriya, "
+        "aks holda ota kategoriyaning `id` si va nomi."
     ),
 )
 class CategoryListView(generics.ListAPIView):
@@ -29,7 +30,7 @@ class CategoryListView(generics.ListAPIView):
     serializer_class = CategorySerializer
     permission_classes = [AllowAny]
     pagination_class = CatalogPagination
-    queryset = Category.objects.filter(is_active=True).order_by('name')
+    queryset = Category.objects.filter(is_active=True).select_related('parent').order_by('name')
 
 
 @extend_schema(
@@ -60,7 +61,7 @@ class ProductListView(generics.ListAPIView):
     def get_queryset(self):
         return (
             Product.objects.filter(is_active=True, category__is_active=True)
-            .select_related('unit')
+            .select_related('category', 'unit')
             .prefetch_related(
                 Prefetch(
                     'images',

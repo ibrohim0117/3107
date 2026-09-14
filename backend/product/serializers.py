@@ -8,9 +8,12 @@ from .models import Category, Product
 class CategorySerializer(serializers.ModelSerializer):
     """GET /api/v1/categories/ — kategoriya ro'yxati elementi."""
 
+    # view'da select_related('parent') — har kategoriya uchun alohida so'rov ketmaydi
+    parent_name = serializers.CharField(source='parent.name', read_only=True, allow_null=True)
+
     class Meta:
         model = Category
-        fields = ('id', 'name', 'slug', 'image', 'parent')
+        fields = ('id', 'name', 'slug', 'image', 'parent', 'parent_name')
         read_only_fields = fields
 
 
@@ -20,6 +23,8 @@ class ProductListSerializer(serializers.ModelSerializer):
     `description`, `cost_price` kabi og'ir/ichki maydonlar bu yerda yo'q.
     """
 
+    # view'da select_related('category', 'unit') — har mahsulot uchun alohida so'rov ketmaydi
+    category_name = serializers.CharField(source='category.name', read_only=True)
     unit = serializers.CharField(source='unit.short_name', read_only=True)
     discount_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
     in_stock = serializers.BooleanField(read_only=True)
@@ -32,6 +37,7 @@ class ProductListSerializer(serializers.ModelSerializer):
             'name',
             'slug',
             'category',
+            'category_name',
             'price',
             'discount',
             'discount_price',
