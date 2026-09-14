@@ -10,7 +10,9 @@ from django.test import TestCase
 from django.urls import reverse
 from rest_framework.test import APITestCase
 
-from users.models import User
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from users.models import User, UserRole
 
 from .models import Category, Comment, Like, Product, ProductImage, Unit
 
@@ -436,3 +438,130 @@ class ProductListAPITests(APITestCase):
         with_image = [i for i in response.data['results'] if i['main_image']]
         self.assertEqual(len(with_image), 10)
         self.assertTrue(all(i['category_name'] for i in response.data['results']))
+
+
+class ProductCreateAPITests(APITestCase):
+    url = reverse('product:product-list')
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.category = Category.objects.create(name='Sut mahsulotlari')
+        cls.nofaol_category = Category.objects.create(name='Arxiv', is_active=False)
+        cls.unit = Unit.objects.create(name='Litr', short_name='l')
+
+        cls.admin = User.objects.create_user(
+            '900000001', 'Qwerty!2345', full_name='Admin', email='admin@b.uz',
+            role=UserRole.ADMIN, is_active=True,
+        )
+        cls.tasdiqlanmagan_admin = User.objects.create_user(
+            '900000002', 'Qwerty!2345', full_name='Yangi admin', email='admin2@b.uz',
+            role=UserRole.ADMIN, is_active=False,
+        )
+        cls.oddiy_user = User.objects.create_user(
+            '900000003', 'Qwerty!2345', full_name='Ali', email='ali@b.uz', is_active=True,
+        )
+        # IsAdminUser ishlatilganda o'tib ketardi — bizda o'tmasligi kerak
+        cls.staff_lekin_user_roli = User.objects.create_user(
+            '900000004', 'Qwerty!2345', full_name='Xodim', email='staff@b.uz',
+            is_active=True, is_staff=True, is_superuser=True,
+        )
+
+    def payload(self, **over):
+        data = {
+            'name': 'Sut 1L',
+            'category': self.category.pk,
+            'unit': self.unit.pk,
+            'price': '12000.00',
+            'discount': '10',
+            'quantity': '50',
+        }
+        data.update(over)
+        return data
+
+    def auth(self, user):
+        token = RefreshToken.for_user(user).access_token
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+
+    # --- ruxsatlar -------------------------------------------------------
+
+    def test_tokensiz_401(self):
+        response = self.client.post(self.url, self.payload(), format='json')
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(Product.objects.exists())
+
+    def test_oddiy_user_403(self):
+        self.auth(self.oddiy_user)
+        response = self.client.post(self.url, self.payload(), format='json')
+
+        self.assertEqual(response.status_code, 403)
+        self.assertEqual(
+            response.data['detail'], "Bu amalni faqat akkaunti tasdiqlangan admin bajara oladi."
+        )
+        self.assertFalse(Product.objects.exists())
+
+    def test_is_staff_va_superuser_bolsa_ham_roli_user_bolsa_403(self):
+        self.auth(self.staff_lekin_user_roli)
+        response = self.client.post(self.url, self.payload(), format='json')
+        self.assertEqual(response.status_code, 403)
+
+    def test_tasdiqlanmagan_admin_permission_darajasida_rad_etiladi(self):
+        # JWT'ni chetlab o'tib, faqat permission'ning o'zini tekshiramiz
+        self.client.force_authenticate(self.tasdiqlanmagan_admin)
+        response = self.client.post(self.url, self.payload(), format='json')
+        self.assertEqual(response.status_code, 403)
+        self.assertFalse(Product.objects.exists())
+
+    def test_tasdiqlanmagan_admin_tokeni_ishlamaydi(self):
+        self.auth(self.tasdiqlanmagan_admin)
+        response = self.client.post(self.url, self.payload(), format='json')
+        self.assertEqual(response.status_code, 401)
+        self.assertFalse(Product.objects.exists())
+
+    def test_ro_yxat_hamon_ochiq(self):
+        self.assertEqual(self.client.get(self.url).status_code, 200)
+
+    # --- muvaffaqiyatli yaratish ----------------------------------------
+
+    def test_tasdiqlangan_admin_yarata_oladi(self):
+        self.auth(self.admin)
+        response = self.client.post(
+            self.url, self.payload(views_count=9999, created_by=self.oddiy_user.pk), format='json'
+        )
+
+        self.assertEqual(response.status_code, 201, response.data)
+        product = Product.objects.get(pk=response.data['id'])
+        self.assertEqual(product.created_by, self.admin)   # tashqaridan berilgani e'tiborsiz
+        self.assertEqual(product.views_count, 0)           # tashqaridan berilgani e'tiborsiz
+        self.assertEqual(product.slug, 'sut-1l')
+        self.assertEqual(response.data['discount_price'], '10800.00')
+
+    # --- validatsiya ----------------------------------------------------
+
+    def test_validatsiya_xatolari(self):
+        self.auth(self.admin)
+        cases = [
+            ({'discount': '150'}, 'discount'),
+            ({'price': '-1'}, 'price'),
+            ({'category': self.nofaol_category.pk}, 'category'),
+            ({'category': 999999}, 'category'),
+            ({'unit': 999999}, 'unit'),
+            ({'name': ''}, 'name'),
+        ]
+        for over, field in cases:
+            with self.subTest(**{field: over[field]}):
+                response = self.client.post(self.url, self.payload(**over), format='json')
+                self.assertEqual(response.status_code, 400)
+                self.assertIn(field, response.data)
+        self.assertFalse(Product.objects.exists())
+
+    def test_sku_takrorlanmaydi_lekin_bosh_sku_bir_nechta_bolishi_mumkin(self):
+        self.auth(self.admin)
+        self.client.post(self.url, self.payload(name='A', sku='SUT-1'), format='json')
+        response = self.client.post(self.url, self.payload(name='B', sku='SUT-1'), format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('sku', response.data)
+
+        for name in ('C', 'D'):
+            response = self.client.post(self.url, self.payload(name=name, sku=''), format='json')
+            self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(Product.objects.filter(sku__isnull=True).count(), 2)

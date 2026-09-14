@@ -1,8 +1,9 @@
 """product app serializerlari."""
 
 from rest_framework import serializers
+from rest_framework.validators import UniqueValidator
 
-from .models import Category, Product
+from .models import Category, Product, Unit
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -55,3 +56,65 @@ class ProductListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         url = images[0].image.url
         return request.build_absolute_uri(url) if request else url
+
+
+class ProductCreateSerializer(serializers.ModelSerializer):
+    """POST /api/v1/products/ — mahsulot yaratish (faqat admin).
+
+    `views_count` va `created_by` tashqaridan berilmaydi.
+    """
+
+    category = serializers.PrimaryKeyRelatedField(
+        queryset=Category.objects.filter(is_active=True),
+        error_messages={'does_not_exist': "Bunday faol kategoriya topilmadi."},
+    )
+    unit = serializers.PrimaryKeyRelatedField(
+        queryset=Unit.objects.all(),
+        error_messages={'does_not_exist': "Bunday o'lchov birligi topilmadi."},
+    )
+    slug = serializers.SlugField(
+        max_length=280,
+        required=False,
+        allow_blank=True,
+        validators=[
+            UniqueValidator(Product.objects.all(), message="Bu slug allaqachon band.")
+        ],
+        help_text="Bo'sh qoldirilsa nomdan avtomatik yasaladi.",
+    )
+    sku = serializers.CharField(
+        max_length=50,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        validators=[
+            UniqueValidator(Product.objects.all(), message="Bu SKU allaqachon mavjud.")
+        ],
+    )
+    discount_price = serializers.DecimalField(max_digits=12, decimal_places=2, read_only=True)
+
+    class Meta:
+        model = Product
+        fields = (
+            'id',
+            'name',
+            'slug',
+            'category',
+            'description',
+            'price',
+            'discount',
+            'discount_price',
+            'cost_price',
+            'unit',
+            'quantity',
+            'min_quantity',
+            'sku',
+            'is_active',
+            'views_count',
+            'created_by',
+            'created_at',
+        )
+        read_only_fields = ('id', 'discount_price', 'views_count', 'created_by', 'created_at')
+
+    def validate_sku(self, value):
+        # Bo'sh SKU NULL bo'lib saqlanadi — aks holda ikkinchi '' unique'ga uriladi
+        return value or None
