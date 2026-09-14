@@ -94,6 +94,22 @@ class Category(BaseModel):
             self.slug = unique_slugify(self, self.name)
         super().save(*args, **kwargs)
 
+    def get_descendant_ids(self):
+        """O'zi va barcha ichki kategoriyalarining id lari.
+
+        Har bir daraja uchun bitta so'rov — chuqurlik kichik bo'lgani uchun yetarli.
+        """
+        ids = {self.pk}
+        level = [self.pk]
+        while level:
+            level = list(
+                Category.objects.filter(parent_id__in=level)
+                .exclude(pk__in=ids)
+                .values_list('pk', flat=True)
+            )
+            ids.update(level)
+        return ids
+
 
 class Unit(BaseModel):
     """O'lchov birligi: Kilogramm/kg, Dona/dona ... (TZ 3.6)."""

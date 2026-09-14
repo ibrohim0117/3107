@@ -295,3 +295,120 @@ class CategoryListAPITests(APITestCase):
         self.assertEqual(set(item), {'id', 'name', 'slug', 'image', 'parent'})
         self.assertEqual(item['name'], 'AAA ichki')
         self.assertEqual(item['parent'], ota.pk)
+
+
+class ProductListAPITests(APITestCase):
+    url = reverse('product:product-list')
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.unit = Unit.objects.create(name='Dona', short_name='dona')
+        cls.oziq = Category.objects.create(name='Oziq-ovqat')
+        cls.sut = Category.objects.create(name='Sut mahsulotlari', parent=cls.oziq)
+        cls.texnika = Category.objects.create(name='Texnika')
+        cls.yopiq = Category.objects.create(name='Yopiq', is_active=False)
+
+        def make(name, category, price, **extra):
+            return Product.objects.create(
+                name=name, category=category, unit=cls.unit, price=Decimal(price), **extra
+            )
+
+        cls.guruch = make('Guruch', cls.oziq, '22000', description='Lazer navli oq guruch')
+        cls.qaymoq = make('Qaymoq', cls.sut, '25000', description='Yangi SUTdan tayyorlangan')
+        cls.sut_1l = make('Sut 1L', cls.sut, '12000', discount=Decimal('10'))
+        cls.telefon = make('Telefon', cls.texnika, '4500000', description='Smartfon')
+        make('Nofaol mahsulot', cls.oziq, '1000', is_active=False)
+        make('Yopiq kategoriyadagi', cls.yopiq, '1000')
+
+    def names(self, response):
+        return {item['name'] for item in response.data['results']}
+
+    def test_loginsiz_ochiladi_va_sahifalanadi(self):
+        response = self.client.get(self.url, {'page_size': 2})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 4)
+        self.assertEqual(len(response.data['results']), 2)
+        self.assertIn('page=2', response.data['next'])
+
+    def test_nofaol_mahsulot_va_nofaol_kategoriya_korinmaydi(self):
+        self.assertEqual(
+            self.names(self.client.get(self.url)), {'Guruch', 'Qaymoq', 'Sut 1L', 'Telefon'}
+        )
+
+    def test_element_maydonlari(self):
+        item = next(
+            i for i in self.client.get(self.url).data['results'] if i['name'] == 'Sut 1L'
+        )
+        self.assertEqual(
+            set(item),
+            {'id', 'name', 'slug', 'category', 'price', 'discount',
+             'discount_price', 'unit', 'in_stock', 'main_image'},
+        )
+        self.assertEqual(item['discount_price'], '10800.00')
+        self.assertEqual(item['unit'], 'dona')
+        self.assertIsNone(item['main_image'])
+
+    def test_asosiy_rasm_toliq_url(self):
+        ProductImage.objects.create(product=self.guruch, image='products/guruch.jpg')
+        item = next(
+            i for i in self.client.get(self.url).data['results'] if i['name'] == 'Guruch'
+        )
+        self.assertEqual(item['main_image'], 'http://testserver/media/products/guruch.jpg')
+
+    def test_kategoriya_filteri_ichki_kategoriyalarni_ham_oladi(self):
+        response = self.client.get(self.url, {'category': self.oziq.pk})
+        self.assertEqual(self.names(response), {'Guruch', 'Qaymoq', 'Sut 1L'})
+
+        response = self.client.get(self.url, {'category': self.sut.pk})
+        self.assertEqual(self.names(response), {'Qaymoq', 'Sut 1L'})
+
+    def test_mavjud_bolmagan_kategoriya_400(self):
+        for value in (999999, self.yopiq.pk, 'abc'):
+            with self.subTest(category=value):
+                response = self.client.get(self.url, {'category': value})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn('category', response.data)
+
+    def test_narx_oraligi(self):
+        response = self.client.get(self.url, {'min_price': 12000, 'max_price': 22000})
+        self.assertEqual(self.names(response), {'Sut 1L', 'Guruch'})  # chegaralar kiradi
+
+        response = self.client.get(self.url, {'min_price': 100000})
+        self.assertEqual(self.names(response), {'Telefon'})
+
+        response = self.client.get(self.url, {'max_price': 20000})
+        self.assertEqual(self.names(response), {'Sut 1L'})
+
+    def test_manfiy_narx_400(self):
+        response = self.client.get(self.url, {'min_price': -5})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('min_price', response.data)
+
+    def test_nom_boyicha_qidiruv(self):
+        self.assertEqual(self.names(self.client.get(self.url, {'search': 'guruch'})), {'Guruch'})
+
+    def test_tavsif_boyicha_qidiruv_harf_farqsiz(self):
+        # "sut" — "Sut 1L" nomida va Qaymoq tavsifida ("SUTdan")
+        response = self.client.get(self.url, {'search': 'sut'})
+        self.assertEqual(self.names(response), {'Sut 1L', 'Qaymoq'})
+
+        self.assertEqual(self.names(self.client.get(self.url, {'search': 'smartfon'})), {'Telefon'})
+
+    def test_filterlar_birga_ishlaydi(self):
+        response = self.client.get(
+            self.url,
+            {'category': self.oziq.pk, 'max_price': 24000, 'search': 'sut'},
+        )
+        self.assertEqual(self.names(response), {'Sut 1L'})
+
+    def test_n_plus_1_yoq(self):
+        for i in range(10):
+            p = Product.objects.create(
+                name=f'Qo\'shimcha {i}', category=self.oziq, unit=self.unit, price=Decimal('1000')
+            )
+            ProductImage.objects.create(product=p, image=f'products/{i}.jpg')
+
+        # count + ro'yxat + rasmlar prefetch — mahsulotlar soniga bog'liq emas
+        with self.assertNumQueries(3):
+            self.client.get(self.url)
